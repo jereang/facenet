@@ -38,7 +38,6 @@ import itertools
 import argparse
 import facenet
 import lfw
-import tensorflow.contrib.slim as slim
 
 from tensorflow.python.ops import data_flow_ops
 
@@ -55,9 +54,8 @@ def main(args):
         os.makedirs(model_dir)
 
     # Store some git revision info in a text file in the log directory
-    if not args.no_store_revision_info:
-        src_path,_ = os.path.split(os.path.realpath(__file__))
-        facenet.store_revision_info(src_path, log_dir, ' '.join(sys.argv))
+    src_path,_ = os.path.split(os.path.realpath(__file__))
+    facenet.store_revision_info(src_path, log_dir, ' '.join(sys.argv))
 
     np.random.seed(seed=args.seed)
     train_set = facenet.get_dataset(args.data_dir)
@@ -122,29 +120,12 @@ def main(args):
             capacity=4 * nrof_preprocess_threads * args.batch_size,
             allow_smaller_final_batch=True)
 
-        batch_norm_params = {
-            # Decay for the moving averages
-            'decay': 0.995,
-            # epsilon to prevent 0s in variance
-            'epsilon': 0.001,
-            # force in-place updates of mean and variance estimates
-            'updates_collections': None,
-            # Moving averages ends up in the trainable variables collection
-            'variables_collections': [ tf.GraphKeys.TRAINABLE_VARIABLES ],
-            # Only update statistics during training mode
-            'is_training': phase_train_placeholder
-        }
         # Build the inference graph
         prelogits, _ = network.inference(image_batch, args.keep_probability, 
-            phase_train=phase_train_placeholder, weight_decay=args.weight_decay)
-        pre_embeddings = slim.fully_connected(prelogits, args.embedding_size, activation_fn=None, 
-                weights_initializer=tf.truncated_normal_initializer(stddev=0.1), 
-                weights_regularizer=slim.l2_regularizer(args.weight_decay),
-                normalizer_fn=slim.batch_norm,
-                normalizer_params=batch_norm_params,
-                scope='Bottleneck', reuse=False)
+            phase_train=phase_train_placeholder, bottleneck_layer_size=args.embedding_size,
+            weight_decay=args.weight_decay)
         
-        embeddings = tf.nn.l2_normalize(pre_embeddings, 1, 1e-10, name='embeddings')
+        embeddings = tf.nn.l2_normalize(prelogits, 1, 1e-10, name='embeddings')
         # Split embeddings into anchor, positive and negative and calculate triplet loss
         anchor, positive, negative = tf.unstack(tf.reshape(embeddings, [-1,3,args.embedding_size]), 3, 1)
         triplet_loss = facenet.triplet_loss(anchor, positive, negative, args.alpha)
@@ -438,15 +419,15 @@ def parse_arguments(argv):
         help='Load a pretrained model before training starts.')
     parser.add_argument('--data_dir', type=str,
         help='Path to the data directory containing aligned face patches. Multiple directories are separated with colon.',
-        default='~/datasets/facescrub/fs_aligned:~/datasets/casia/casia-webface-aligned')
+        default='~/datasets/casia/casia_maxpy_mtcnnalign_182_160')
     parser.add_argument('--model_def', type=str,
-        help='Model definition. Points to a module containing the definition of the inference graph.', default='models.nn4')
+        help='Model definition. Points to a module containing the definition of the inference graph.', default='models.inception_resnet_v1')
     parser.add_argument('--max_nrof_epochs', type=int,
         help='Number of epochs to run.', default=500)
     parser.add_argument('--batch_size', type=int,
         help='Number of images to process in a batch.', default=90)
     parser.add_argument('--image_size', type=int,
-        help='Image size (height, width) in pixels.', default=96)
+        help='Image size (height, width) in pixels.', default=160)
     parser.add_argument('--people_per_batch', type=int,
         help='Number of people per batch.', default=45)
     parser.add_argument('--images_per_person', type=int,
@@ -455,7 +436,7 @@ def parse_arguments(argv):
         help='Number of batches per epoch.', default=1000)
     parser.add_argument('--alpha', type=float,
         help='Positive to negative triplet distance margin.', default=0.2)
-    parser.add_argument('--embedding_size', type=float,
+    parser.add_argument('--embedding_size', type=int,
         help='Dimensionality of the embedding.', default=128)
     parser.add_argument('--random_crop', 
         help='Performs random cropping of training images. If false, the center image_size pixels from the training images are used. ' +
@@ -481,8 +462,6 @@ def parse_arguments(argv):
         help='Random seed.', default=666)
     parser.add_argument('--learning_rate_schedule_file', type=str,
         help='File containing the learning rate schedule that is used when learning_rate is set to to -1.', default='data/learning_rate_schedule.txt')
-    parser.add_argument('--no_store_revision_info', 
-        help='Disables storing of git revision info in revision_info.txt.', action='store_true')
 
     # Parameters for validation on LFW
     parser.add_argument('--lfw_pairs', type=str,
