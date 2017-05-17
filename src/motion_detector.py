@@ -11,7 +11,7 @@ class MotionDetector():
     """ 运动检测器
     """
 
-    def __init__(self, threshold=10, doRecord=True, showWindows=True):
+    def __init__(self, threshold=1, doRecord=True, showWindows=True):
         self.writer = None
         self.font = None
         self.doRecord = doRecord
@@ -56,7 +56,6 @@ class MotionDetector():
 
             if not self.isRecording:
                 if self.somethingHasMoved():
-                    self.previous_frame = self.average_frame
                     self.trigger_time = instant # update the trigger_time
                     if instant > started + 10: # wait 5 second after the webcam start for luminosity adjusting etc..
                         print("Something is moving !")
@@ -84,6 +83,7 @@ class MotionDetector():
             self.previous_frame = self.average_frame
 
         self.absdiff_frame = cv2.absdiff(self.average_frame, self.previous_frame)
+        self.previous_frame = self.average_frame
 
         self.gray_frame = cv2.cvtColor(self.absdiff_frame, cv2.COLOR_BGR2GRAY)
         _, self.gray_frame = cv2.threshold(self.gray_frame, 50, 255, cv2.THRESH_BINARY)
